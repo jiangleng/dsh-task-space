@@ -1,7 +1,7 @@
 {
   "name": "dsh-task-space",
   "version": "1.0.0",
-  "private": true,
+  "private": false,
   "type": "module",
   "description": "One-click Task workspace: dated task folder + workspace registration + bound new session.",
   "icon": "./icon.svg",
@@ -17,7 +17,8 @@
     "icon.svg",
     "settings.yaml",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "keywords": [
     "dsh",
@@ -26,6 +27,15 @@
     "task",
     "workspace"
   ],
+  "license": "MIT",
+  "homepage": "https://github.com/jiangleng/dsh-task-space#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jiangleng/dsh-task-space.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jiangleng/dsh-task-space/issues"
+  },
   "scripts": {
     "test": "node scripts/smoke-test.mjs",
     "validate": "node scripts/validate-manifest.mjs"

@@ -48,7 +48,14 @@ check('package.json parses', pkg !== null);
 if (!pkg) process.exit(1);
 check('name', pkg.name === 'dsh-task-space', String(pkg.name));
 check('version is semver', /^\d+\.\d+\.\d+(-[\w.]+)?$/.test(pkg.version || ''), String(pkg.version));
-check('private bundle', pkg.private === true);
+// npm publish requires `private` to be absent/false (npm refuses `private: true`).
+// The plugin is published to npm as part of the marketplace submission flow,
+// so the manifest must stay publishable.
+check('publishable package (private !== true)', pkg.private !== true, String(pkg.private));
+check('license declared (npm publish requirement)', typeof pkg.license === 'string' && pkg.license.length > 0, String(pkg.license));
+const repoUrl = pkg.repository && (typeof pkg.repository === 'string' ? pkg.repository : pkg.repository.url);
+check('repository declared (npm publish requirement)', typeof repoUrl === 'string' && repoUrl.length > 0, String(repoUrl));
+check('LICENSE file shipped', existsSync(path.join(ROOT, 'LICENSE')));
 check('type module', pkg.type === 'module');
 const exportsMap = pkg.exports || {};
 check('exports "." -> ./index.js', exportsMap['.'] === './index.js', JSON.stringify(exportsMap['.']));
