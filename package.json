@@ -1,6 +1,6 @@
 {
   "name": "dsh-task-space",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": false,
   "type": "module",
   "description": "One-click Task workspace: dated task folder + workspace registration + bound new session.",
