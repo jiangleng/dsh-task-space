@@ -70,7 +70,7 @@ dsh --dump-config | Select-String task-space   # 应出现 id: task-space / name
 
 ```powershell
 node D:\dsh_project\dsh-task-space\scripts\validate-manifest.mjs   # 56 项静态校验（manifest + 权限 + 语法）
-node D:\dsh_project\dsh-task-space\scripts\smoke-test.mjs          # 95 项断言（真实 Handler + 模拟 Cordis 服务，无需运行中的 DSH）
+node D:\dsh_project\dsh-task-space\scripts\smoke-test.mjs          # 97 项断言（真实 Handler + 模拟 Cordis 服务，无需运行中的 DSH）
 ```
 
 ## 2. 使用
@@ -135,7 +135,7 @@ dsh-task-space/
 ├── locale/{en.json,zh.json}    # 显示元数据（meta.title / meta.description）
 ├── scripts/
 │   ├── validate-manifest.mjs   # manifest + 权限声明 + 语法 校验（56 项）
-│   └── smoke-test.mjs          # 功能测试（95 项断言）
+│   └── smoke-test.mjs          # 功能测试（97 项断言）
 └── README.md
 ```
 
@@ -169,7 +169,7 @@ Set-Location D:\dsh_project\dsh-task-space
 # ① 静态校验（manifest 合法性 + 权限声明 + 全部 JS 语法，56 项）
 node scripts\validate-manifest.mjs
 
-# ② 功能测试（真实插件 Handler + 模拟 Cordis 服务，95 项断言；不需要运行中的 DSH）
+# ② 功能测试（真实插件 Handler + 模拟 Cordis 服务，97 项断言；不需要运行中的 DSH）
 node scripts\smoke-test.mjs
 #    覆盖：三层配置合并 / 模板渲染与目录名清洗 / 权限校验与回滚 /
 #    信任栅栏（403/405）/ settings.yaml 免重启生效 / 清理语义与日志 /
@@ -198,7 +198,7 @@ await fetch('/api/task-space/cleanup', { method: 'POST', headers: { 'x-dsh-plugi
 
 - **TypeScript 说明**：DSH Cordis bundle 直接在 Host/浏览器执行，**无构建步骤**（官方规范：部署用 Client 构建工具，不引入自定义 bundler）。本插件源码为带完整 JSDoc 类型标注的 ESM JavaScript；如需严格 TS 校验，可在下游用 `tsc --allowJs --checkJs`，运行时无需编译。
 - **不做的事**：不修改 `document.body` / 应用根节点、不替换原生选目录流、不注册新的 session 事件 type、不抢占原生目录流槽位。
-- **侧边栏行渲染方式**：`sidebar.panellist` 的每一行由包装器渲染 `<button>` + 文字 label，插件组件只提供图标（勿再渲染文字，否则一行出现两份文本）；点击需 `stopPropagation`，避免触发面板切换。`sidebar.workspaces.session.row.action` 同理：图标按钮由外层 `.rowActions` 容器负责悬停显隐与点击隔离。
+- **侧边栏行渲染方式**：`sidebar.panellist` 的每一行由包装器渲染 `<button>` + 文字 label，插件组件只提供图标（勿再渲染文字，否则一行出现两份文本）。**整行可点**：label 点击会走包装器的 `selectPanel(id)`——该 key 没有注册 `main` 面板时 `layout.selectPanel` 直接抛错，因此插件给包装器行按钮挂了原生 `click` 监听（先于 React 根监听触发），点击行任意位置都会触发创建并用 `stopPropagation` 阻断 `selectPanel`。`sidebar.workspaces.session.row.action` 同理：图标按钮由外层 `.rowActions` 容器负责悬停显隐与点击隔离。
 - **打开工作目录**：经官方 `session.openWorkspacePath` Remote 打开（客户端用 `ctx.sessions` 摘要的 `cwd`，宿主 `verifyDesktopPath` 做路径往返校验）；`canOpenWorkspacePath()` 预检失败（无桌面环境）会给出明确提示。
 - **清理安全性**：没有 `.dsh-task-space.json` 标记的目录**永远不会**被自动清理删除；`autoCleanDays: 0`（默认）连扫描都不执行。
 - **CSRF 防护**：非 GET 缺 `x-dsh-plugin` 头返回 403；跨站 Origin 被拒。

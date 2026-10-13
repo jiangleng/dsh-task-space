@@ -557,6 +557,12 @@ async function main() {
     const pkgJson = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'));
     check(pkgJson.dsh.client.inject.includes('@deepseek-ai/dsh-client-connection'),
       'package.json client.inject lists @deepseek-ai/dsh-client-connection (owns the Remote the row button calls)');
+    check(clientSource.includes("parentElement?.closest('button')"),
+      'panellist glyph bridges to the wrapper row button — a label click must run createTask, '
+      + 'not layout.selectPanel (which throws for a key with no registered main panel)');
+    check(clientSource.includes("row.addEventListener('click'"),
+      'the row bridge is a native click listener (fires before React\'s root listener, '
+      + 'so stopPropagation keeps selectPanel from ever running)');
   } finally {
     await unstashSettings();
     await fs.rm(TMP, { recursive: true, force: true }).catch(() => {});

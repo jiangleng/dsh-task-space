@@ -28,7 +28,7 @@ window.__ModuleLoader__.load({
   id: 'dsh-task-space',
   factory(require) {
     const React = require('react');
-    const { createElement: h, useState, useEffect, useCallback } = React;
+    const { createElement: h, useState, useEffect, useCallback, useRef } = React;
 
     // module/exports shim so the loader sees { inject, apply } exports.
     const module = { exports: {} };
@@ -416,23 +416,43 @@ window.__ModuleLoader__.load({
      * ONLY the icon — rendering its own text label duplicated the row
      * ("新建临时对话 新建临时对话").
      *
-     * Clicks stop at this node (preventDefault + stopPropagation) so the
-     * wrapper's `selectPanel(id)` never fires for a panel this plugin does
-     * not register; keyboard users focus this inner button and press Enter.
+     * Two click paths must both run `createTask`:
+     *   - icon clicks: this inner button's React onClick stops propagation
+     *   - label/row clicks: land on the wrapper, whose `selectPanel(id)`
+     *     THROWS for this key (no `main` panel is registered) — a native
+     *     click listener attached to the wrapper row fires BEFORE React's
+     *     root listener, so stopping propagation there makes the whole row
+     *     clickable while selectPanel never runs
+     * Keyboard users focus this inner button and press Enter (the synthesized
+     * click bubbles to the same native row listener).
      * @param {{size?: number, active?: boolean}} props - glyph props from PanelRow.
      */
     function TaskPanelGlyph(props) {
       const size = Number.isFinite(props?.size) ? props.size : 16;
       const snapshot = useStateStore();
       const busy = snapshot.busy;
+      const rootRef = useRef(null);
       const onClick = useCallback((event) => {
         event.preventDefault();
         event.stopPropagation();
         void createTask();
       }, []);
+      // Whole-row bridge (see jsdoc): our glyph sits inside the wrapper's
+      // <button> (button > span.panelGlyph > us), so climb to that wrapper.
+      useEffect(() => {
+        const row = rootRef.current?.parentElement?.closest('button');
+        if (!row) return undefined;
+        const onRowClick = (event) => {
+          event.stopPropagation();
+          void createTask();
+        };
+        row.addEventListener('click', onRowClick);
+        return () => row.removeEventListener('click', onRowClick);
+      }, []);
       return h(
         'button',
         {
+          ref: rootRef,
           type: 'button',
           className: 'dsh-ts-btn',
           disabled: busy,
