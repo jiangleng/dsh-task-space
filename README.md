@@ -10,6 +10,7 @@ English quickstart: [English](#english-quickstart)
 - **不改原生入口**：原生「新建会话」保持原样（依旧手动选文件夹），插件不占用 `sidebar.workspaces.directoryFlow` 等原生目录流槽位。
 - **配置免重启**：三层合并（schema 默认值 → patch 行 config → 包根 `settings.yaml`），`settings.yaml` 每次请求时重读，改完即生效。
 - **安全删除**：自动清理只删除带本插件标记文件 `.dsh-task-space.json` 且超期的目录，全过程写日志，绝不静默删除。
+- **悬停打开工作目录**：鼠标移至侧边栏任意会话行，在归档/置顶/删除同一排出现文件夹图标，点击即在系统文件管理器中打开该会话的工作目录（走官方 Session Remote `openWorkspacePath`，带宿主路径强校验）。
 - **权限与 CSRF**：非 GET 请求强制 `x-dsh-plugin: dsh-task-space` 头，并通过回环/受信主机 Origin 校验，否则 403。
 
 ---
@@ -69,7 +70,7 @@ dsh --dump-config | Select-String task-space   # 应出现 id: task-space / name
 
 ```powershell
 node D:\dsh_project\dsh-task-space\scripts\validate-manifest.mjs   # 56 项静态校验（manifest + 权限 + 语法）
-node D:\dsh_project\dsh-task-space\scripts\smoke-test.mjs          # 88 项断言（真实 Handler + 模拟 Cordis 服务，无需运行中的 DSH）
+node D:\dsh_project\dsh-task-space\scripts\smoke-test.mjs          # 95 项断言（真实 Handler + 模拟 Cordis 服务，无需运行中的 DSH）
 ```
 
 ## 2. 使用
@@ -79,6 +80,7 @@ node D:\dsh_project\dsh-task-space\scripts\smoke-test.mjs          # 88 项断�
 3. 任一步失败：**立即回滚**（已创建的目录会被删除并记日志），WebUI 弹出错误对话框（按错误码本地化 + 服务端原始诊断信息），Esc / 关闭按钮收起。
 4. 每次点击都会在后台**异步**扫描 `rootDir`（仅当 `autoCleanDays > 0`）：只删除**带插件标记文件且创建时间超期**的目录；删除前先移除对应工作区记录，全过程写日志（`cleanup: scanning/removed/done …`）。
 5. 原生「新建会话」行为不变，仍需手动选择文件夹。
+6. **悬停任意会话行**（不限本插件创建的会话）：行内悬停图标区（省略号菜单 / 归档 / 置顶 / 删除同排）出现**文件夹图标**，点击在系统文件管理器中打开该会话的工作目录；空白会话（尚无工作目录）或宿主无桌面打开能力时弹出错误对话框。
 
 ## 3. 配置
 
@@ -133,7 +135,7 @@ dsh-task-space/
 ├── locale/{en.json,zh.json}    # 显示元数据（meta.title / meta.description）
 ├── scripts/
 │   ├── validate-manifest.mjs   # manifest + 权限声明 + 语法 校验（56 项）
-│   └── smoke-test.mjs          # 功能测试（88 项断言）
+│   └── smoke-test.mjs          # 功能测试（95 项断言）
 └── README.md
 ```
 
@@ -167,11 +169,12 @@ Set-Location D:\dsh_project\dsh-task-space
 # ① 静态校验（manifest 合法性 + 权限声明 + 全部 JS 语法，56 项）
 node scripts\validate-manifest.mjs
 
-# ② 功能测试（真实插件 Handler + 模拟 Cordis 服务，88 项断言；不需要运行中的 DSH）
+# ② 功能测试（真实插件 Handler + 模拟 Cordis 服务，95 项断言；不需要运行中的 DSH）
 node scripts\smoke-test.mjs
 #    覆盖：三层配置合并 / 模板渲染与目录名清洗 / 权限校验与回滚 /
 #    信任栅栏（403/405）/ settings.yaml 免重启生效 / 清理语义与日志 /
-#    client URL 拼接回归 / session.create 契约（workspaceId XOR cwd）
+#    client URL 拼接回归 / session.create 契约（workspaceId XOR cwd）/
+#    悬停行「打开工作目录」契约（row.action slot + openWorkspacePath + NO_CWD 防护）
 
 # ③ 打包（生成可分发 .tgz；files 白名单限定随包文件）
 pnpm pack            # 或 npm pack → dsh-task-space-1.0.0.tgz
@@ -195,7 +198,8 @@ await fetch('/api/task-space/cleanup', { method: 'POST', headers: { 'x-dsh-plugi
 
 - **TypeScript 说明**：DSH Cordis bundle 直接在 Host/浏览器执行，**无构建步骤**（官方规范：部署用 Client 构建工具，不引入自定义 bundler）。本插件源码为带完整 JSDoc 类型标注的 ESM JavaScript；如需严格 TS 校验，可在下游用 `tsc --allowJs --checkJs`，运行时无需编译。
 - **不做的事**：不修改 `document.body` / 应用根节点、不替换原生选目录流、不注册新的 session 事件 type、不抢占原生目录流槽位。
-- **侧边栏行渲染方式**：`sidebar.panellist` 的每一行由包装器渲染 `<button>` + 文字 label，插件组件只提供图标（勿再渲染文字，否则一行出现两份文本）；点击需 `stopPropagation`，避免触发面板切换。
+- **侧边栏行渲染方式**：`sidebar.panellist` 的每一行由包装器渲染 `<button>` + 文字 label，插件组件只提供图标（勿再渲染文字，否则一行出现两份文本）；点击需 `stopPropagation`，避免触发面板切换。`sidebar.workspaces.session.row.action` 同理：图标按钮由外层 `.rowActions` 容器负责悬停显隐与点击隔离。
+- **打开工作目录**：经官方 `session.openWorkspacePath` Remote 打开（客户端用 `ctx.sessions` 摘要的 `cwd`，宿主 `verifyDesktopPath` 做路径往返校验）；`canOpenWorkspacePath()` 预检失败（无桌面环境）会给出明确提示。
 - **清理安全性**：没有 `.dsh-task-space.json` 标记的目录**永远不会**被自动清理删除；`autoCleanDays: 0`（默认）连扫描都不执行。
 - **CSRF 防护**：非 GET 缺 `x-dsh-plugin` 头返回 403；跨站 Origin 被拒。
 - **重复安装**：同 id 的 insert 行重复会出现 overridden/restart-required 状态，请先移除旧安装。
@@ -239,6 +243,7 @@ await fetch('/api/task-space/cleanup', { method: 'POST', headers: { 'x-dsh-plugi
 - Zero third-party dependencies (only the official `@deepseek-ai/schemastery` SDK), no install/publish lifecycle hooks.
 - The native *New session* flow is left untouched.
 - Optional auto-clean removes only folders stamped with the plugin marker, always with logs.
+- Hovering any session row reveals an **open-working-directory** folder button beside the native archive/pin/delete actions (official `session.openWorkspacePath` Remote).
 
 **Install**
 
@@ -254,7 +259,7 @@ dsh plugin --profile desktop add dsh-task-space                    # from npm (a
 
 ```bash
 node scripts/validate-manifest.mjs   # 56 static checks
-node scripts/smoke-test.mjs          # 88 behavioral assertions
+node scripts/smoke-test.mjs          # 93 behavioral assertions
 ```
 
 **Configure** — edit `settings.yaml` in the package root (takes effect without restart):

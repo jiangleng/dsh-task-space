@@ -1,6 +1,6 @@
 {
   "name": "dsh-task-space",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "private": false,
   "type": "module",
   "description": "One-click Task workspace: dated task folder + workspace registration + bound new session.",
@@ -50,7 +50,8 @@
       "inject": [
         "@deepseek-ai/dsh-client-runtime",
         "@deepseek-ai/dsh-client-ui-slots",
-        "@deepseek-ai/dsh-client-locale"
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-connection"
       ]
     }
   },

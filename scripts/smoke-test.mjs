@@ -537,6 +537,26 @@ async function main() {
     check(!/workspaceId\s*,\s*cwd\s*:/.test(indexSource),
       'index.js never sends workspaceId AND cwd in one session.create request '
       + '(dsh-api-session-controller rejects the combination as bad-request)');
+
+    /* -------- 12. hover-row open-directory action (client) ------------- */
+    head('session row open-directory action');
+    check(clientSource.includes("sidebar.workspaces.session.row.action"),
+      'client registers into the native session-row hover action slot (archive/pin/delete row)');
+    check(clientSource.includes('openWorkspacePath'),
+      'opening goes through the official session.openWorkspacePath Remote (no plugin route)');
+    check(clientSource.includes('openWorkspacePath({ path: cwd })'),
+      'the remote request carries exactly the resolved session cwd');
+    check(clientSource.includes("ApiFailure('NO_CWD'"),
+      'a session without cwd surfaces NO_CWD instead of calling the remote');
+    check(clientSource.includes("id: 'task-space-open-dir'") && /order:\s*50,/.test(clientSource),
+      'row action registered with a stable id and order 50 (first injected action)');
+    check(/const inject = \[[^\]]*'remote\.session'/.test(clientSource)
+      && /const inject = \[[^\]]*'remote'/.test(clientSource),
+      'client inject declares BOTH remote and remote.session — the client enforces the same '
+      + '"without inject" gating as the Host, so ctx.remote.session.* throws without them');
+    const pkgJson = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'));
+    check(pkgJson.dsh.client.inject.includes('@deepseek-ai/dsh-client-connection'),
+      'package.json client.inject lists @deepseek-ai/dsh-client-connection (owns the Remote the row button calls)');
   } finally {
     await unstashSettings();
     await fs.rm(TMP, { recursive: true, force: true }).catch(() => {});

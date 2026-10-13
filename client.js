@@ -3,7 +3,10 @@
  *
  * Registers one button in the sidebar panellist ("【新建临时对话】", the first
  * row directly under the native New Session button — which this plugin never
- * touches or modifies) and one error dialog on the `shell.overlay` slot.
+ * touches or modifies), one error dialog on the `shell.overlay` slot, and one
+ * hover-row folder button on `sidebar.workspaces.session.row.action` (same row
+ * as the native archive/pin/delete actions) that opens the session's working
+ * directory in the OS file manager via the official Session Remote.
  *
  * Click flow: POST /api/task-space/create -> Host creates the dated folder,
  * registers the workspace and creates a bound session (no directory picker is
@@ -57,6 +60,12 @@ window.__ModuleLoader__.load({
       'error.bad-request': 'Invalid request',
       'error.forbidden': 'Request rejected by the security check',
       'error.method-not-allowed': 'HTTP method not allowed',
+      'row.openDir': 'Open working directory',
+      'row.openDir.title': 'Open the working directory of “{name}” in the file manager',
+      'error.openDir': 'Failed to open the working directory',
+      'error.NO_CWD': 'This session has no working directory',
+      'error.DESKTOP_UNAVAILABLE': 'The host desktop cannot open folders right now',
+      'error.OPEN_DIR_FAILED': 'The host could not open this path in the file manager',
     };
 
     /** Chinese copy (key set is the source of truth). */
@@ -78,6 +87,12 @@ window.__ModuleLoader__.load({
       'error.bad-request': '请求无效',
       'error.forbidden': '请求被安全校验拒绝',
       'error.method-not-allowed': 'HTTP 方法不允许',
+      'row.openDir': '打开工作目录',
+      'row.openDir.title': '在文件管理器中打开「{name}」的工作目录',
+      'error.openDir': '打开工作目录失败',
+      'error.NO_CWD': '该会话还没有工作目录',
+      'error.DESKTOP_UNAVAILABLE': '宿主桌面当前无法打开文件夹',
+      'error.OPEN_DIR_FAILED': '宿主无法在文件管理器中打开该路径',
     };
 
     /* ------------------------------------------------------------------ *
@@ -255,6 +270,55 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Open the session's working directory on the Host desktop through the
+     * official Session Remote (`openWorkspacePath`) — the same path the
+     * shipped open-in-app controls take. The client resolves the session cwd
+     * from its local store; the Host verifies the path round-trip
+     * (verifyDesktopPath) and runs the native file-manager command. No
+     * plugin HTTP route is involved.
+     * @param {string} sessionId - session whose `cwd` should open.
+     * @returns {Promise<string>} the opened path.
+     */
+    async function openWorkingDirectory(sessionId) {
+      // Session summaries live in the client `sessions` store and already
+      // carry `cwd`; no host round-trip is needed just to learn the path.
+      const sessions = pickService('sessions');
+      let summary = null;
+      try {
+        summary = sessions?.list?.getSnapshot?.()?.byId?.[sessionId];
+      } catch { /* store not ready */ }
+      const cwd = summary && typeof summary.cwd === 'string' ? summary.cwd : '';
+      if (!cwd) throw new ApiFailure('NO_CWD', `session ${sessionId} has no working directory`);
+      // `remote` is resolved like every other service (ctx.get first): an
+      // unblessed direct property read must never throw mid-click.
+      const remote = pickService('remote');
+      if (!remote?.session || typeof remote.session.openWorkspacePath !== 'function') {
+        throw new ApiFailure('internal', 'the session remote is unavailable');
+      }
+      // Availability pre-check: a headless Host reports false here.
+      if (typeof remote.session.canOpenWorkspacePath === 'function') {
+        let available = false;
+        try {
+          const result = await remote.session.canOpenWorkspacePath();
+          available = result?.ok === true && result?.value === true;
+        } catch (error) {
+          throw new ApiFailure('DESKTOP_UNAVAILABLE', messageOf(error));
+        }
+        if (!available) throw new ApiFailure('DESKTOP_UNAVAILABLE', 'canOpenWorkspacePath() reported false');
+      }
+      let ok = false;
+      try {
+        // Omitting `action` opens the directory itself in the file manager
+        // (Host: shell.openPath for a directory => a file-manager window).
+        ok = (await remote.session.openWorkspacePath({ path: cwd })).ok === true;
+      } catch (error) {
+        throw new ApiFailure('OPEN_DIR_FAILED', messageOf(error));
+      }
+      if (!ok) throw new ApiFailure('OPEN_DIR_FAILED', `openWorkspacePath refused ${cwd}`);
+      return cwd;
+    }
+
+    /**
      * The 【新建临时对话】 click flow (single-flight: re-entrant clicks ignored).
      */
     async function createTask() {
@@ -306,6 +370,10 @@ window.__ModuleLoader__.load({
 .dsh-ts-ok{border:none;border-radius:8px;padding:7px 16px;font:inherit;font-size:13px;cursor:pointer;background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}
 .dsh-ts-ok:hover{background:var(--dsw-alias-button-primary-hover)}
 .dsh-ts-ok:focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}
+.dsh-ts-row-btn{display:inline-flex;align-items:center;justify-content:center;width:22px;height:20px;padding:0;border:none;background:transparent;color:var(--dsw-alias-label-secondary);border-radius:var(--dsw-radius-sm,4px);cursor:pointer}
+.dsh-ts-row-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dsh-ts-row-btn:disabled{opacity:.6;cursor:default}
+.dsh-ts-row-btn:focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
 `;
 
     /** The folder-plus glyph (slot-sized, inherits currentColor). */
@@ -316,6 +384,16 @@ window.__ModuleLoader__.load({
         { viewBox: '0 0 24 24', width: size, height: size, fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true, focusable: false },
         h('path', { d: 'M3 6.5A1.5 1.5 0 0 1 4.5 5h4l1.6 2H19.5A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z' }),
         h('path', { d: 'M12 10.5v5M9.5 13h5' }),
+      );
+    }
+
+    /** Plain folder glyph for the open-directory row action (no plus sign). */
+    function FolderGlyph(props) {
+      const size = Number.isFinite(props?.size) ? props.size : 16;
+      return h(
+        'svg',
+        { viewBox: '0 0 24 24', width: size, height: size, fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true, focusable: false },
+        h('path', { d: 'M3 6.5A1.5 1.5 0 0 1 4.5 5h4l1.6 2H19.5A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z' }),
       );
     }
 
@@ -365,6 +443,51 @@ window.__ModuleLoader__.load({
         },
         h('style', null, CSS),
         busy ? h(Spinner, { size }) : h(TaskGlyph, { size }),
+      );
+    }
+
+    /**
+     * Hover-row folder button on `sidebar.workspaces.session.row.action` —
+     * the same action row as the native archive/pin/delete buttons (visible
+     * with them on row hover). Clicking opens this session's working
+     * directory in the OS file manager; failures reuse the plugin's modal
+     * error dialog.
+     * @param {{sessionId?: string, displayTitle?: string}} props - slot props.
+     */
+    function OpenDirRowButton(props) {
+      const sessionId = typeof props?.sessionId === 'string' ? props.sessionId : '';
+      const [busy, setBusy] = useState(false);
+      const title = props?.displayTitle || sessionId;
+      const onClick = useCallback(async (event) => {
+        // The row itself is clickable — never let this button also select it.
+        event.preventDefault();
+        event.stopPropagation();
+        if (busy) return;
+        setBusy(true);
+        try {
+          await openWorkingDirectory(sessionId);
+        } catch (error) {
+          setState({
+            error: { code: error instanceof ApiFailure ? error.code : 'internal', detail: messageOf(error), seq: state.errorSeq + 1 },
+            errorSeq: state.errorSeq + 1,
+          });
+        } finally {
+          setBusy(false);
+        }
+      }, [sessionId, busy]);
+      if (!sessionId) return null;
+      return h(
+        'button',
+        {
+          type: 'button',
+          className: 'dsh-ts-row-btn',
+          disabled: busy,
+          title: translate('row.openDir.title', { name: title }),
+          'aria-label': translate('row.openDir'),
+          onClick,
+        },
+        h('style', null, CSS),
+        h(FolderGlyph, { size: 16 }),
       );
     }
 
@@ -423,7 +546,11 @@ window.__ModuleLoader__.load({
     }
 
     /** Services required at activation (kept minimal on purpose). */
-    const inject = ['slots', 'locale'];
+    // Client services required at activation. `remote` / `remote.session` are
+    // mandatory: the client enforces the same `without inject` gating as the
+    // Host, so `ctx.remote.session.openWorkspacePath` throws "cannot get
+    // property ..." unless the exact service path is declared here first.
+    const inject = ['slots', 'locale', 'remote', 'remote.session'];
 
     /**
      * Register locale dictionaries, the sidebar panellist button and the error
@@ -457,6 +584,21 @@ window.__ModuleLoader__.load({
             ),
           ),
         'dsh-task-space: sidebar panellist entry',
+      );
+
+      // Hover-row folder button: same action row as the native archive/pin/
+      // delete buttons (the wrapper shows it on hover). order 50 renders it
+      // first among the injected actions, right after the "…" menu. Opening
+      // goes through the official Session Remote — no plugin route involved.
+      ctx.effect(
+        () =>
+          ctx.slots.inject('sidebar.workspaces.session.row.action', () =>
+            ctx.slots.register(
+              { name: 'sidebar.workspaces.session.row.action', id: 'task-space-open-dir', order: 50, label: () => translate('row.openDir') },
+              OpenDirRowButton,
+            ),
+          ),
+        'dsh-task-space: session row open-directory action',
       );
 
       // Error dialog on the shell overlay layer.
