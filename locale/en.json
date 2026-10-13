@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Task Space",
+    "description": "One-click temporary session: creates a dated task folder under a configured root, registers it as a DSH workspace and opens a new session bound to it."
+  }
+}

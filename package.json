@@ -1,0 +1,50 @@
+{
+  "name": "dsh-task-space",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "One-click Task workspace: dated task folder + workspace registration + bound new session.",
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "*.js",
+    "locale/*.json",
+    "icon.svg",
+    "settings.yaml",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "task",
+    "workspace"
+  ],
+  "scripts": {
+    "test": "node scripts/smoke-test.mjs",
+    "validate": "node scripts/validate-manifest.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "3.18.1"
+  }
+}

@@ -1,0 +1,30 @@
+# dsh-task-space 插件配置（settings.yaml）
+#
+# 本文件是插件的最高优先级配置层：每次「新建临时对话」请求到达 Host 时都会重新读取，
+# 因此修改本文件后无需重启 DSH，下一次点击【新建临时对话】即生效。
+#
+# 优先级（低 → 高）：
+#   1. 插件内置默认值（index.js / config.js DEFAULTS）
+#   2. cordis.patch.yml 行内 config（也是 Settings 自动生成表单写入的位置）
+#   3. 本文件 settings.yaml（最高）
+#
+# 仅支持顶层 `key: value` 行；整行注释用 `#` 开头；请勿在值里写行内注释。
+
+# 任务存放根目录，支持 ~ 家目录简写。目录不存在时会自动创建。
+# 创建/写入失败（无权限、只读盘等）会在 WebUI 弹窗提示。
+rootDir: 'D:\dsh_working'
+
+# 任务文件夹命名模板。内置变量：
+#   ${YYYYMMDD} / ${date}   → 年月日，如 20260214
+#   ${HHMMSS}   / ${time}   → 时分秒，如 153045
+#   ${taskId}   / ${taskShortId} → 8 位随机短 id
+#   ${taskTitle}            → 任务标题（由调用方传入，可为空）
+folderTemplate: '${YYYYMMDD}-${HHMMSS}-${taskShortId}'
+
+# 新建任务默认 Agent 预设。内置可用：standard / ptc / minimal。
+defaultPreset: 'standard'
+
+# 自动清理：0 = 关闭；大于 0 时，每次点击【新建临时对话】都会异步扫描 rootDir，
+# 删除创建时间超过 N 天、且带本插件标记文件（.dsh-task-space.json）的子目录。
+# 每次删除都会写日志（不会静默删除）。
+autoCleanDays: 0
