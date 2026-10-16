@@ -69,8 +69,8 @@ dsh --dump-config | Select-String task-space   # 应出现 id: task-space / name
 ### 安装前后自检
 
 ```powershell
-node D:\dsh_project\dsh-task-space\scripts\validate-manifest.mjs   # 56 项静态校验（manifest + 权限 + 语法）
-node D:\dsh_project\dsh-task-space\scripts\smoke-test.mjs          # 97 项断言（真实 Handler + 模拟 Cordis 服务，无需运行中的 DSH）
+node D:\dsh_project\dsh-task-space\scripts\validate-manifest.mjs   # 64 项静态校验（manifest + 权限 + 语法）
+node D:\dsh_project\dsh-task-space\scripts\smoke-test.mjs          # 116 项断言（真实 Handler + 模拟 Cordis 服务，无需运行中的 DSH）
 ```
 
 ## 2. 使用
@@ -84,17 +84,49 @@ node D:\dsh_project\dsh-task-space\scripts\smoke-test.mjs          # 97 项断�
 
 ## 3. 配置
 
+配置有两条通道，二选一即可（同键同时存在时，**表越大者赢**）：
+
+| 通道 | 写入位置 | 层 | 生效时机 |
+| --- | --- | --- | --- |
+| **A. WebUI 插件页表单（推荐）** | 插件 → 任务空间 → 组件行「配置」 | patch config（第 2 层） | 保存后**下一次点击即生效**，免重启 |
+| B. 插件包 `settings.yaml` | 包根 `settings.yaml` | 文件层（**第 1 层，最高**） | 每次请求重读，免重启 |
+
+> 表单为什么不是最高层：DSH 官方配置链只有三层——内置 schema 默认值 → profile `cordis.patch.yml` 的 `config:` →（由插件自管的）包内 `settings.yaml`。插件页表单经 `dsh-config-editor` 写的就是 patch config 层（官方对全部插件一视同仁，不会为单个插件发明第四层）；`settings.yaml` 是插件自建的运维层，刻意放在最高，用于**版本化分发 + 团队统一下发**。
+>
+> 所以：**表单保存一定生效，除非 `settings.yaml` 写了同键**——那种情况下是文件层按设计覆盖了 GUI（属预期，不是 bug）。想完全用页面控制，把 `settings.yaml` 里对应键删掉即可（删掉后表单值就是最高层）。
+
+### 3.1 在 WebUI 插件页配置（推荐）
+
+1. 侧边栏点【插件】→ 列表中点 **任务空间** 卡片进入详情页；
+2. 在「包含的组件」里找到 `dsh-task-space`（`task-space`）这一行，行尾出现**「配置」**按钮（因插件已把该行注册进 `plugins.row.config` 槽）；
+3. 点「配置」进入配置页，四个字段即为插件的全部配置项：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `rootDir` | 文本 | 任务存放根目录，支持 `~` 家目录简写 |
+| `folderTemplate` | 文本 | 文件夹命名模板，内置 `${date}` `${time}` `${taskId}` `${taskShortId}` `${taskTitle}` |
+| `defaultPreset` | 文本 | 新建任务默认 Agent 预设，默认 `standard` |
+| `autoCleanDays` | 数字 | 自动清理旧任务目录天数，`0` = 关闭；大于 `0` 时每次点击新建后异步清理 |
+
+4. 改完点【保存】；想恢复某个字段的默认值点该字段旁的【恢复默认】（unset 回 inherited 层）；表单有未保存改动时【放弃】可丢弃草稿；
+5. 字段若显示「已自定义」徽标，表示当前值来自 patch config 覆盖层（即非 schema 默认值）；
+6. 非回环部署（远程访问）时 `configForms` 持久化退化为 memory，表单呈**只读**——这是 DSH 官方行为，不是插件缺陷。
+
+> 表单写在 patch config 层，由 Host 的 `settings.mutate` 校验后经 `dsh-config-editor` 原子写入 profile 的 `cordis.patch.yml` 并触发 Loader 热重载；插件 Host 侧每次请求都重新读取合并后的配置，因此**保存后立即生效，无需重启**。若保存后行为没变，先看 `settings.yaml` 是否写了同键（见上方说明）。
+
+### 3.2 编辑 `settings.yaml`（最高优先级）
+
 三层合并（优先级从低到高），每一层都可单独覆盖：
 
 1. 插件内置默认值（`index.js` 的 `export const Config` schema）
-2. `cordis.patch.yml` insert 行的 `config:`（profile 级，随 bundle 安装写入）
+2. `cordis.patch.yml` insert 行的 `config:`（profile 级；**插件页表单也写这一层**）
 3. 插件包根目录的 **`settings.yaml`**（最高优先级；每次 API 请求时重新读取，**改完免重启生效**）
 
 `settings.yaml` 样例（即包根同名文件）：
 
 ```yaml
 # dsh-task-space 插件配置（最高优先级；UTF-8；支持 ~ 家目录简写）
-rootDir: ~/.dsh/tasks                      # 任务存放根目录
+rootDir: D:\dsh_working                     # 任务存放根目录
 folderTemplate: ${YYYYMMDD}-${HHMMSS}-${taskShortId}   # 目录命名模板
 defaultPreset: standard                    # 新建任务默认 Agent 预设
 autoCleanDays: 0                           # 0=关闭自动清理；>0=删除超过 N 天的任务目录
@@ -109,12 +141,10 @@ autoCleanDays: 0                           # 0=关闭自动清理；>0=删除超
 | `${taskId}` | 任务短 ID（随机 8 位；全局唯一性由时间戳保证） | `a3f9c21b` |
 | `${taskTitle}` | 任务标题（由 `POST /api/task-space/create` 的 `title` 字段传入；侧边栏按钮流程不收集标题，渲染为空串） | `登录页改版` |
 
-配置也可在 DSH 设置页修改（Config schema 自动生成表单；`settings.yaml` 存在时以文件为准）。
-
 ## 4. 卸载
 
 1. DSH → 设置 → 插件 → `dsh-task-space` → Remove/停用（插件管理器移除 patch 行与安装产物）。
-2. 如需彻底清理：删除 profile `cordis.patch.yml` 中残留的 `id: task-space` insert 行；删除任务根目录（如 `~/.dsh/tasks`）——**插件卸载不会自动删除你的任务数据**。
+2. 如需彻底清理：删除 profile `cordis.patch.yml` 中残留的 `id: task-space` insert 行；删除任务根目录（默认 `D:\dsh_working`）——**插件卸载不会自动删除你的任务数据**。
 3. 删除源码目录（及发布后的 npm 缓存安装）。
 
 ## 5. 目录结构
@@ -124,18 +154,18 @@ dsh-task-space/
 ├── package.json            # manifest（元数据 + dsh.bundle.patch + dsh.client 双半侧声明）
 ├── cordis.patch.yml        # Cordis Loader patch：把 host 半侧挂进 profile 组合
 ├── settings.yaml           # 插件配置（用户可编辑，最高优先级，免重启生效）
-├── icon.svg                # 侧边栏/设置页图标（≤256KiB）
+├── icon.svg                # 侧边栏/插件页图标（≤256KiB）
 ├── LICENSE                 # MIT
 ├── index.js                # Host 半侧：HTTP 路由、目录创建、工作区/会话注册、清理调度
-├── client.js               # Client 半侧：侧边栏按钮（sidebar.panellist）、错误弹窗、会话导航
+├── client.js               # Client 半侧：侧边栏按钮（sidebar.panellist）、错误弹窗、会话导航、插件页配置卡片（plugins.row.config）
 ├── wire.js                 # HTTP 响应信封与请求体解析（{ok,value}/{ok:false,error}）
 ├── trust-fence.js          # 浏览器→Host 请求信任栅栏（回环/受信主机 + x-dsh-plugin 头）
 ├── config.js               # 三层配置合并、模板渲染、目录名清洗、建目录与标记文件
 ├── cleanup.js              # 自动清理：只删带标记且超期的目录，逐步记日志
 ├── locale/{en.json,zh.json}    # 显示元数据（meta.title / meta.description）
 ├── scripts/
-│   ├── validate-manifest.mjs   # manifest + 权限声明 + 语法 校验（56 项）
-│   └── smoke-test.mjs          # 功能测试（97 项断言）
+│   ├── validate-manifest.mjs   # manifest + 权限声明 + 语法 校验（64 项）
+│   └── smoke-test.mjs          # 功能测试（116 项断言）
 └── README.md
 ```
 
@@ -146,19 +176,20 @@ dsh-task-space/
 | 字段 | 含义 |
 | --- | --- |
 | `dsh.bundle.patch: "./cordis.patch.yml"` | Host 半侧安装进 profile 的 Loader patch |
-| `dsh.client: { platform:"web", immediately:true, inject:[runtime, ui-slots, ui-locale] }` | Client 半侧进入浏览器模块图（slot + locale 依赖） |
+| `dsh.client: { platform:"web", immediately:true, inject:[runtime, ui-slots, ui-locale, ui-settings, connection] }` | Client 半侧进入浏览器模块图（slot + locale + configForms 依赖） |
 | `exports["."] / ["./client"]` | Host / Client 入口 |
 | `exports["./package.json"]`、`exports["./locale/*.json"]`、`files` | DSH 显示元数据必需声明 |
 | `dependencies: { "@deepseek-ai/schemastery": "3.18.1" }` | 唯一依赖：DSH 官方 Config schema SDK |
+| `dsh.client.inject` 追加 `@deepseek-ai/dsh-client-ui-settings` | 提供 `configForms` 服务（插件页配置卡片的数据源；`inject` 只声明激活顺序，非 npm 依赖） |
 | `icon: "./icon.svg"` | 插件图标 |
 | `license / repository / homepage / bugs` | npm 发布与溯源元数据（MIT，GitHub `jiangleng/dsh-task-space`） |
 
-**权限声明检查结论**（`scripts/validate-manifest.mjs` 自动校验，56 项全绿）：
+**权限声明检查结论**（`scripts/validate-manifest.mjs` 自动校验，64 项全绿）：
 
 - 无 `install`/`preinstall`/`postinstall`/`prepublish` 等生命周期钩子（不会执行任意安装代码）；
 - 依赖白名单仅 `@deepseek-ai/schemastery`（DSH 内置 SDK，非第三方）；无 peerDependencies 越界；
 - Client 半侧 `inject` 仅声明 `@deepseek-ai/*` 官方客户端包；
-- 运行时能力面：`webServer`（注册 `/api/task-space/{create,cleanup,config}` 三条 exact 路由）+ `webRuntime`、`workspaceController`、`sessionController`、`agentPresets`（`index.js` 模块级 `export const inject` 声明；重服务全部惰性 `ctx.get` 解析）；
+- 运行时能力面：`webServer`（注册 `/api/task-space/{create,cleanup,config}` 三条 exact 路由）+ `webRuntime`、`workspaceController`、`sessionController`、`agentPresets`（`index.js` 模块级 `export const inject` 声明；重服务全部惰性 `ctx.get` 解析）；Client 侧另用 `configForms`（只读 schema + 经 `remote.settings.mutate` 写 patch config 层，无自持持久化）；
 - 非 GET 缺 `x-dsh-plugin` 头 → 403；跨站 Origin → 403；方法不符 → 405；错误统一 JSON 信封。
 
 ## 7. 开发、打包与测试
@@ -166,23 +197,26 @@ dsh-task-space/
 ```powershell
 Set-Location D:\dsh_project\dsh-task-space
 
-# ① 静态校验（manifest 合法性 + 权限声明 + 全部 JS 语法，56 项）
+# ① 静态校验（manifest 合法性 + 权限声明 + 全部 JS 语法，64 项）
 node scripts\validate-manifest.mjs
 
-# ② 功能测试（真实插件 Handler + 模拟 Cordis 服务，97 项断言；不需要运行中的 DSH）
+# ② 功能测试（真实插件 Handler + 模拟 Cordis 服务，116 项断言；不需要运行中的 DSH）
 node scripts\smoke-test.mjs
 #    覆盖：三层配置合并 / 模板渲染与目录名清洗 / 权限校验与回滚 /
 #    信任栅栏（403/405）/ settings.yaml 免重启生效 / 清理语义与日志 /
 #    client URL 拼接回归 / session.create 契约（workspaceId XOR cwd）/
-#    悬停行「打开工作目录」契约（row.action slot + openWorkspacePath + NO_CWD 防护）
+#    悬停行「打开工作目录」契约（row.action slot + openWorkspacePath + NO_CWD 防护）/
+#    插件页配置卡片契约（Config.volatile + plugins.row.config + configForms + 读写路径）
 
 # ③ 打包（生成可分发 .tgz；files 白名单限定随包文件）
-pnpm pack            # 或 npm pack → dsh-task-space-1.0.0.tgz
+pnpm pack            # 或 npm pack → dsh-task-space-1.2.0.tgz
 
 # ④ 安装：GUI「Install bundle」指向本目录（方式 A），或 dsh plugin add（方式 B）
 # ⑤ 生效时机：Host 侧改动需完全重启 DSH Desktop；仅 client.js 改动 F5 刷新即可
 # ⑥ 功能验收：点击【新建临时对话】→ 无目录弹窗 → rootDir 出现
 #    20260214-153045-a3f9c21b → 自动打开绑定会话（preset=standard）→ 日志有清理记录
+# ⑦ 插件页配置验收：侧边栏【插件】→ 任务空间 → 组件行「配置」→ 四字段表单可保存
+#    （非回环部署表单只读，属官方行为）
 ```
 
 API 级调试请在**浏览器 DevTools 控制台**用同源 `fetch`（DSH 平台鉴权对外部 HTTP 客户端统一返回 403，`curl` 到不了插件路由）：
@@ -201,6 +235,8 @@ await fetch('/api/task-space/cleanup', { method: 'POST', headers: { 'x-dsh-plugi
 - **侧边栏行渲染方式**：`sidebar.panellist` 的每一行由包装器渲染 `<button>` + 文字 label，插件组件只提供图标（勿再渲染文字，否则一行出现两份文本）。**整行可点**：label 点击会走包装器的 `selectPanel(id)`——该 key 没有注册 `main` 面板时 `layout.selectPanel` 直接抛错，因此插件给包装器行按钮挂了原生 `click` 监听（先于 React 根监听触发），点击行任意位置都会触发创建并用 `stopPropagation` 阻断 `selectPanel`。`sidebar.workspaces.session.row.action` 同理：图标按钮由外层 `.rowActions` 容器负责悬停显隐与点击隔离。
 - **打开工作目录**：经官方 `session.openWorkspacePath` Remote 打开（客户端用 `ctx.sessions` 摘要的 `cwd`，宿主 `verifyDesktopPath` 做路径往返校验）；`canOpenWorkspacePath()` 预检失败（无桌面环境）会给出明确提示。
 - **清理安全性**：没有 `.dsh-task-space.json` 标记的目录**永远不会**被自动清理删除；`autoCleanDays: 0`（默认）连扫描都不执行。
+- **插件页配置表单只读**：非回环访问时 DSH 的 `configForms` 持久化退化为 memory，表单禁用保存——这是平台行为；本地/回环部署不受影响。
+- **表单层与文件层关系**：插件页表单写 patch config 层；包根 `settings.yaml` 仍是最高优先级。若保存表单后行为没变，先检查 `settings.yaml` 是否写有同键——把该键删掉，表单就成为该键的最高层。
 - **CSRF 防护**：非 GET 缺 `x-dsh-plugin` 头返回 403；跨站 Origin 被拒。
 - **重复安装**：同 id 的 insert 行重复会出现 overridden/restart-required 状态，请先移除旧安装。
 - **Windows**：目录名剔除 `\/:*?"<>|` 与控制字符，`CON/PRN/AUX/NUL` 等保留名自动加前缀；`rootDir` 支持 `~` 展开到用户主目录。
@@ -214,9 +250,12 @@ await fetch('/api/task-space/cleanup', { method: 'POST', headers: { 'x-dsh-plugi
 | 弹「HTTP 404 / not found」 | Host 路由未注册：完全重启 DSH Desktop；确认 `dsh --dump-config` 有 `id: task-space` |
 | 弹「without inject」 | 服务解析方式错误：确认 index.js 使用 `ctx.get` 优先的惰性解析（当前版本已修复） |
 | 弹「session.create accepts workspaceId or cwd, not both」 | 会话创建契约：二选一（本插件已修复为有 workspaceId 只传它） |
-| 弹「没有权限写入任务目录」 | `rootDir` 不可写：改 `settings.yaml` 为可写路径（如 `~/.dsh/tasks`） |
+| 弹「没有权限写入任务目录」 | `rootDir` 不可写：改 `settings.yaml` 或插件页表单为可写路径（默认 `D:\dsh_working`） |
 | 弹「无法创建任务根目录」 | 磁盘/路径非法；日志含具体 errno |
 | 清理没有执行 | `autoCleanDays: 0`（默认关闭）或目录缺插件标记 |
+| 保存了插件页表单但行为没变 | `settings.yaml` 写了同键（文件层按设计覆盖 GUI 层）：删掉该键，或改用文件配置 |
+| 插件详情页没有「配置」按钮 | Host Config 字段未标 `.volatile()`（`dsh-settings describe()` 不导出该 entry 的 namespace，插件页无从渲染表单）；本版本四字段均已 volatile |
+| 插件页表单只读/不可保存 | 非回环部署（remote 访问）持久化为 memory；或 profile 中该 entry 未激活 |
 | 会话创建成功但没自动打开 | 浏览器导航服务延迟超时（约 6s）；从侧边栏进入该会话即可，会话本身已创建 |
 
 ## 10. 发布到插件市场（维护者）
@@ -244,6 +283,7 @@ await fetch('/api/task-space/cleanup', { method: 'POST', headers: { 'x-dsh-plugi
 - The native *New session* flow is left untouched.
 - Optional auto-clean removes only folders stamped with the plugin marker, always with logs.
 - Hovering any session row reveals an **open-working-directory** folder button beside the native archive/pin/delete actions (official `session.openWorkspacePath` Remote).
+- All four settings are configurable from the plugin's detail page in the Web UI (Plugins → 任务空间 → row **配置**), no file editing required.
 
 **Install**
 
@@ -258,17 +298,22 @@ dsh plugin --profile desktop add dsh-task-space                    # from npm (a
 **Verify**
 
 ```bash
-node scripts/validate-manifest.mjs   # 56 static checks
-node scripts/smoke-test.mjs          # 93 behavioral assertions
+node scripts/validate-manifest.mjs   # 64 static checks
+node scripts/smoke-test.mjs          # 116 behavioral assertions
 ```
 
-**Configure** — edit `settings.yaml` in the package root (takes effect without restart):
+**Configure** — two channels; when a key exists in both, `settings.yaml` wins by design:
+
+1. **Plugin page form (recommended)** — sidebar Plugins → 任务空间 → component row **配置**: four fields (`rootDir`, `folderTemplate`, `defaultPreset`, `autoCleanDays`) with save/discard/per-field reset. It writes the profile `cordis.patch.yml` `config:` layer through DSH's own `dsh-config-editor` (hot-reloaded, no restart) — that is the standard layer for every DSH plugin. It takes effect on the next click, **unless `settings.yaml` declares the same key**.
+2. **`settings.yaml`** in the package root — the plugin's own top layer (for versioned / team-wide distribution); re-read per request, no restart. Remove a key here to let the page form control it.
 
 ```yaml
-rootDir: ~/.dsh/tasks
+rootDir: D:\dsh_working
 folderTemplate: ${YYYYMMDD}-${HHMMSS}-${taskShortId}
 defaultPreset: standard
 autoCleanDays: 0        # 0 = disabled; N = remove task folders older than N days
 ```
+
+Template variables: `${YYYYMMDD}`/`${date}`, `${HHMMSS}`/`${time}`, `${taskId}`, `${taskShortId}`, `${taskTitle}`.
 
 Issues: https://github.com/jiangleng/dsh-task-space/issues · License: MIT

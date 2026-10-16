@@ -35,9 +35,15 @@ export const MARKER_FILE = '.dsh-task-space.json';
 /** Default folder template: `${YYYYMMDD}-${HHMMSS}-${taskShortId}`. */
 export const DEFAULT_TEMPLATE = '${YYYYMMDD}-${HHMMSS}-${taskShortId}';
 
-/** Built-in configuration defaults (lowest precedence). */
+/**
+ * Built-in configuration defaults (lowest precedence).
+ *
+ * `rootDir` defaults to `D:\dsh_working` because that is the directory this
+ * plugin ships for (see settings.yaml, which pins the same value). Users on
+ * other machines can point it anywhere via the plugin page form or the file.
+ */
 export const DEFAULTS = Object.freeze({
-  rootDir: '~/.dsh/tasks',
+  rootDir: 'D:\\dsh_working',
   folderTemplate: DEFAULT_TEMPLATE,
   defaultPreset: 'standard',
   autoCleanDays: 0,
@@ -112,6 +118,18 @@ export function readSettingsFile() {
 
 /**
  * Merge all config layers into a typed, validated configuration.
+ *
+ * Layer order (low -> high; a key present in a higher layer wins):
+ *   1. `DEFAULTS` — the built-in `export const Config` schema defaults
+ *   2. `rowConfig` — the Cordis row config (patch `config:`; the DSH plugin
+ *      page form saves here via `dsh-config-editor`, hot-reloaded, no restart)
+ *   3. `settings.yaml` — the package file, re-read on every request
+ *
+ * The file layer sits on top because it is the operator-owned, versioned copy
+ * that ships with the plugin; the patch layer is the GUI-editable runtime
+ * layer. To let the plugin page form fully control a key, remove that key
+ * from settings.yaml (documented there).
+ *
  * @param {unknown} rowConfig - the Cordis row config passed to `apply(ctx, config)`.
  * @returns {TaskSpaceConfig} effective configuration.
  */

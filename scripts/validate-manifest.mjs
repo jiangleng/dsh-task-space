@@ -76,6 +76,7 @@ check('dsh.client.platform === "web"', client.platform === 'web', String(client.
 const inject = Array.isArray(client.inject) ? client.inject : [];
 check('dsh.client.inject non-empty', inject.length > 0, inject.join(', '));
 check('dsh.client.inject are @deepseek-ai/* packages', inject.every((s) => typeof s === 'string' && s.startsWith('@deepseek-ai/')));
+check('dsh.client.inject includes settings (configForms provider)', inject.includes('@deepseek-ai/dsh-client-ui-settings'), inject.join(', '));
 for (const key of ['.', './client']) {
   const target = exportsMap[key];
   check(`entry file exists: ${key}`, typeof target === 'string' && existsSync(path.join(ROOT, target)), String(target));
@@ -113,10 +114,21 @@ const depNames = Object.keys(pkg.dependencies || {});
 check('dependencies within DSH SDK allow-list', depNames.every((d) => DEP_ALLOW_LIST.includes(d)), depNames.join(', ') || 'none');
 check('no peerDependencies surprises', Object.keys(pkg.peerDependencies || {}).every((d) => d.startsWith('@deepseek-ai/') || d === 'react' || d === 'react-dom'));
 const idxSrc = readFileSync(path.join(ROOT, 'index.js'), 'utf8');
+const clientSrc = readFileSync(path.join(ROOT, 'client.js'), 'utf8');
 const wireSrc = readFileSync(path.join(ROOT, 'wire.js'), 'utf8');
 const fenceSrc = readFileSync(path.join(ROOT, 'trust-fence.js'), 'utf8');
 check('host declares export const Config (validated schema)', /export\s+const\s+Config\b/.test(idxSrc));
 check('host declares service inject list', /export\s+const\s+inject\s*=/.test(idxSrc));
+// Volatile fields are what make the four settings appear in the plugin-page
+// configuration form (Host settings describe() skips non-volatile schemas).
+const volatileFields = ['rootDir', 'folderTemplate', 'defaultPreset', 'autoCleanDays'];
+for (const field of volatileFields) {
+  check(`Config.${field} is .volatile()`, new RegExp(`${field}:\\s*z\\.(?:string|number)\\(\\)[^;]*?\\.volatile\\(\\)`).test(idxSrc));
+}
+check('client registers plugins.row.config', /plugins\.row\.config/.test(clientSrc));
+check('client row config key is <package>#<row id>', /dsh-task-space#task-space/.test(clientSrc));
+check('client gates row config on whileServed', /whileServed\(\[CONFIG_NS\]/.test(clientSrc));
+check('client reads configForms service', /configForms\s*\.\s*get\(CONFIG_NS\)/.test(clientSrc));
 check('mutating routes enforce x-dsh-plugin header', /x-dsh-plugin/.test(fenceSrc));
 check('error envelope present in wire.js', /ok:\s*false/.test(wireSrc) && /ok:\s*true/.test(wireSrc));
 

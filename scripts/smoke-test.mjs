@@ -563,6 +563,61 @@ async function main() {
     check(clientSource.includes("row.addEventListener('click'"),
       'the row bridge is a native click listener (fires before React\'s root listener, '
       + 'so stopPropagation keeps selectPanel from ever running)');
+
+    /* -------- 13. plugin-page configuration card (plugins.row.config) ---- */
+    head('plugin page configuration card');
+    const pkgJson2 = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'));
+    for (const field of ['rootDir', 'folderTemplate', 'defaultPreset', 'autoCleanDays']) {
+      check(new RegExp(`${field}:\\s*z\\.(?:string|number)\\(\\)[^;]*?\\.volatile\\(\\)`).test(indexSource),
+        `Host Config.${field} is .volatile() — without it dsh-settings describe() exports no `
+        + 'namespace and the plugin page shows no configure control at all');
+    }
+    check(/autoCleanDays:\s*z\.number\(\)[^;]*\.min\(0\)/.test(indexSource),
+      'autoCleanDays is bounded with .min(0) at the schema layer (negative cleanup windows are nonsense)');
+    check(clientSource.includes("CONFIG_NS = 'task-space'"),
+      "client namespaces the form with the Host entry id ('task-space' — the patch insert id, "
+      + 'NOT the package name and NOT the locale namespace)');
+    check(clientSource.includes("const CONFIG_SLOT_KEY = 'dsh-task-space#task-space'"),
+      'plugins.row.config key is <package name>#<row id>, exactly what the plugin page derives '
+      + 'to decide whether the row gets a 「配置」 control');
+    check(/const inject = \[[^\]]*'configForms'/.test(clientSource),
+      "client inject declares 'configForms' — the client enforces the same "
+      + '"without inject" gating as the Host');
+    check(pkgJson2.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-settings'),
+      'package.json client.inject lists @deepseek-ai/dsh-client-ui-settings (the configForms provider)');
+    check(/configForms\s*\.\s*whileServed\(\[CONFIG_NS\]/.test(clientSource) || /whileServed\(\[CONFIG_NS\]/.test(clientSource),
+      'registration is gated on whileServed([CONFIG_NS]) so a host that does not serve the '
+      + 'namespace keeps the plugin untouched');
+    check(/this\.scope\?\.mutate\?\.\(/.test(clientSource) && /op:\s*'unset'/.test(clientSource) && /op:\s*'set'/.test(clientSource),
+      'writes go through the ConfigFormController mutate() (remote.settings.mutate) with '
+      + 'set/unset ops — no plugin-owned persistence');
+    check(/view === 'page' \? 'page' : 'summary'/.test(clientSource),
+      "the card honors the slot's view contract ('summary' = one-liner, 'page' = the form)");
+    check(clientSource.includes("view === 'summary'") && /'dsh-ts-cfg-actions'/.test(clientSource),
+      "view 'summary' renders the one-line description; page view renders the four-field "
+      + 'form with save/discard actions');
+    check(clientSource.includes('controller.resetField(field)') && clientSource.includes('config.reset'),
+      'each overridden field offers a reset (unset -> back to the inherited value)');
+    check(/disabled = !state\.writable/.test(clientSource),
+      'the form is read-only when the snapshot is not writable (e.g. non-loopback '
+      + 'persistence = memory)');
+    check(/state\.failed/.test(clientSource) && /dirty/.test(clientSource),
+      'a failed save keeps the draft and reports it; a clean form disables the save button');
+    check(!/require\('@deepseek-ai\/dsh-client-ui-primitives'\)/.test(clientSource),
+      'the client bundle still does NOT require any Harness Client package '
+      + '(primitives are forbidden by the plugin skill)');
+    const enKeys = [...clientSource.matchAll(/^\s*'(config\.[^']+)':/gm)].map((m) => m[1]);
+    check(enKeys.length >= 20,
+      `client.js carries the config.* copy keys for both locales (got ${enKeys.length})`);
+    // settings.yaml is stashed for the duration of the run (section 6 restores
+    // it), so read the pristine copy back from the stash before checking its
+    // documentation comment.
+    const settingsText = existsSync(SETTINGS_BACKUP)
+      ? await fs.readFile(SETTINGS_BACKUP, 'utf8')
+      : await fs.readFile(SETTINGS_FILE, 'utf8');
+    check(/patch config/.test(settingsText),
+      'settings.yaml documents that the plugin-page form writes the patch config layer, '
+      + 'which this file still overrides');
   } finally {
     await unstashSettings();
     await fs.rm(TMP, { recursive: true, force: true }).catch(() => {});

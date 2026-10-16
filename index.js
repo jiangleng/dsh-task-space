@@ -47,17 +47,28 @@ export const inject = ['webServer'];
 /**
  * Configuration schema. Drives (a) activation-time validation of the row
  * `config` and (b) the auto-generated Settings form for this plugin.
+ *
+ * `.volatile()` on every field is the switch that makes the four settings
+ * appear on the DSH plugin page (插件 → 任务空间 → 行「配置」):
+ * the Host settings service only exports a namespace for entries whose schema
+ * contains at least one volatile field (`dsh-settings` describe() skips
+ * `volatileForm(schema) === void 0`). Without it the plugin page shows the
+ * description text only, with no configure control. Fields are top-level
+ * leaves of this object, which `validateVolatileSchema` requires ("volatile
+ * fields require a fixed object path"). Writes land in the Cordis row `config`
+ * layer — i.e. the patch config, NOT settings.yaml — and take effect on the
+ * next request because `resolveEffectiveConfig` re-reads every layer per call.
  * @type {any}
  */
 export const Config = z.object({
   /** Task root directory; `~` home shorthand is expanded. */
-  rootDir: z.string().default(DEFAULTS.rootDir),
+  rootDir: z.string().default(DEFAULTS.rootDir).volatile().description('任务根目录'),
   /** Folder name template (`${YYYYMMDD}-${HHMMSS}-${taskShortId}` by default). */
-  folderTemplate: z.string().default(DEFAULT_TEMPLATE),
+  folderTemplate: z.string().default(DEFAULT_TEMPLATE).volatile().description('文件夹命名模板'),
   /** Agent preset for new task sessions. */
-  defaultPreset: z.string().default(DEFAULTS.defaultPreset),
+  defaultPreset: z.string().default(DEFAULTS.defaultPreset).volatile().description('默认 Agent 预设'),
   /** 0 disables auto-cleanup; >0 deletes marked task dirs older than N days. */
-  autoCleanDays: z.number().default(DEFAULTS.autoCleanDays),
+  autoCleanDays: z.number().default(DEFAULTS.autoCleanDays).min(0).volatile().description('自动清理天数（0 = 关闭）'),
 });
 
 /** Route prefix for every plugin endpoint. */

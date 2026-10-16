@@ -3,10 +3,12 @@
  *
  * Registers one button in the sidebar panellist ("【新建临时对话】", the first
  * row directly under the native New Session button — which this plugin never
- * touches or modifies), one error dialog on the `shell.overlay` slot, and one
+ * touches or modifies), one error dialog on the `shell.overlay` slot, one
  * hover-row folder button on `sidebar.workspaces.session.row.action` (same row
  * as the native archive/pin/delete actions) that opens the session's working
- * directory in the OS file manager via the official Session Remote.
+ * directory in the OS file manager via the official Session Remote, and the
+ * plugin-page configuration card on `plugins.row.config` (插件 → 任务空间 →
+ * 行「配置」), which edits the four plugin settings without a restart.
  *
  * Click flow: POST /api/task-space/create -> Host creates the dated folder,
  * registers the workspace and creates a bound session (no directory picker is
@@ -36,6 +38,21 @@ window.__ModuleLoader__.load({
 
     /** Dictionary namespace registered with the Client locale service. */
     const NS = 'dsh-task-space';
+    /**
+     * Host settings namespace of this plugin's row — the `id` declared in
+     * cordis.patch.yml's insert, which `dsh-settings` uses as the namespace
+     * for `ConfigFormController`. It is NOT the package name and NOT the
+     * locale namespace above; `configForms.get()` and `whileServed()` both
+     * key on it.
+     */
+    const CONFIG_NS = 'task-space';
+    /**
+     * Cell key for the `plugins.row.config` slot. The contract is
+     * `<package name>#<row id>` — here `dsh-task-space#task-space`. The
+     * plugin page derives the very same key to decide whether the row gets a
+     * 「配置」 control at all.
+     */
+    const CONFIG_SLOT_KEY = 'dsh-task-space#task-space';
     /** Plugin route prefix (mirrors the Host). */
     const API_BASE = '/api/task-space';
     /** The header every mutating request carries (Host trust fence). */
@@ -66,6 +83,27 @@ window.__ModuleLoader__.load({
       'error.NO_CWD': 'This session has no working directory',
       'error.DESKTOP_UNAVAILABLE': 'The host desktop cannot open folders right now',
       'error.OPEN_DIR_FAILED': 'The host could not open this path in the file manager',
+      // Plugin-page configuration card (plugins.row.config).
+      'config.title': 'Task Space',
+      'config.summary': 'Configure the task root, folder template, default preset and cleanup window.',
+      'config.rootDir': 'Task root directory',
+      'config.rootDirHint': 'Where task folders are created. `~` is expanded to the home directory.',
+      'config.folderTemplate': 'Folder name template',
+      'config.folderTemplateHint': 'Variables: ${date} ${time} ${taskId} ${taskShortId} ${taskTitle}',
+      'config.defaultPreset': 'Default agent preset',
+      'config.defaultPresetHint': 'Agent preset applied to new task sessions (e.g. standard).',
+      'config.autoCleanDays': 'Auto-cleanup (days)',
+      'config.autoCleanDaysHint': '0 disables cleanup; a positive value removes task folders older than N days.',
+      'config.overridden': 'customized',
+      'config.reset': 'Reset',
+      'config.save': 'Save',
+      'config.saving': 'Saving…',
+      'config.discard': 'Discard',
+      'config.readOnly': 'Read-only in this deployment',
+      'config.unavailable': 'Configuration is unavailable on this host',
+      'config.saveFailed': 'Save failed — the draft is kept, please retry',
+      'config.invalidNumber': 'Please enter a number',
+      'config.fileOverrideHint': 'Values are written to the plugin’s patch config. A settings.yaml in the plugin directory still takes precedence over this form.',
     };
 
     /** Chinese copy (key set is the source of truth). */
@@ -93,6 +131,27 @@ window.__ModuleLoader__.load({
       'error.NO_CWD': '该会话还没有工作目录',
       'error.DESKTOP_UNAVAILABLE': '宿主桌面当前无法打开文件夹',
       'error.OPEN_DIR_FAILED': '宿主无法在文件管理器中打开该路径',
+      // 插件页配置卡片（plugins.row.config）。
+      'config.title': '任务空间',
+      'config.summary': '在此配置任务根目录、文件夹命名模板、默认 Agent 预设与自动清理天数。',
+      'config.rootDir': '任务根目录',
+      'config.rootDirHint': '任务文件夹的创建位置，支持 ~ 家目录简写。',
+      'config.folderTemplate': '文件夹命名模板',
+      'config.folderTemplateHint': '可用变量：${date} ${time} ${taskId} ${taskShortId} ${taskTitle}',
+      'config.defaultPreset': '默认 Agent 预设',
+      'config.defaultPresetHint': '新建临时对话使用的 Agent 预设（例如 standard）。',
+      'config.autoCleanDays': '自动清理天数',
+      'config.autoCleanDaysHint': '0 表示关闭自动清理；大于 0 时删除创建超过 N 天的任务目录。',
+      'config.overridden': '已自定义',
+      'config.reset': '恢复默认',
+      'config.save': '保存',
+      'config.saving': '保存中…',
+      'config.discard': '放弃',
+      'config.readOnly': '当前部署为只读',
+      'config.unavailable': '当前宿主不支持配置',
+      'config.saveFailed': '保存失败——草稿已保留，请重试',
+      'config.invalidNumber': '请输入数字',
+      'config.fileOverrideHint': '保存写入插件 patch 配置层；插件目录下的 settings.yaml 优先级更高，会覆盖本表单的值。',
     };
 
     /* ------------------------------------------------------------------ *
@@ -374,6 +433,32 @@ window.__ModuleLoader__.load({
 .dsh-ts-row-btn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .dsh-ts-row-btn:disabled{opacity:.6;cursor:default}
 .dsh-ts-row-btn:focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
+.dsh-ts-cfg{display:flex;flex-direction:column;gap:14px;box-sizing:border-box;font-size:13px;color:var(--dsw-alias-label-primary)}
+.dsh-ts-cfg-summary{margin:0;font-size:12px;line-height:1.5;color:var(--dsw-alias-label-secondary)}
+.dsh-ts-cfg-field{display:flex;flex-direction:column;gap:4px}
+.dsh-ts-cfg-label{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary)}
+.dsh-ts-cfg-badge{display:inline-block;padding:0 6px;border-radius:999px;background:var(--dsw-alias-background-selected,var(--dsw-alias-interactive-bg-hover));color:var(--dsw-alias-label-secondary);font-size:10px;font-weight:500;line-height:16px}
+.dsh-ts-cfg-input{box-sizing:border-box;width:100%;padding:6px 8px;border:0.5px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm,6px);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px}
+.dsh-ts-cfg-input:focus{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-1px}
+.dsh-ts-cfg-input:disabled{opacity:.6;cursor:default}
+.dsh-ts-cfg-input[aria-invalid="true"]{border-color:var(--dsw-alias-state-business-critical,var(--dsw-alias-border-l2))}
+.dsh-ts-cfg-hint{margin:0;font-size:11px;line-height:1.5;color:var(--dsw-alias-label-tertiary);word-break:break-word}
+.dsh-ts-cfg-invalid{margin:0;font-size:11px;color:var(--dsw-alias-state-business-critical,var(--dsw-alias-label-secondary))}
+.dsh-ts-cfg-actions{display:flex;align-items:center;gap:8px}
+.dsh-ts-cfg-primary{border:none;border-radius:8px;padding:6px 14px;font:inherit;font-size:12px;cursor:pointer;background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}
+.dsh-ts-cfg-primary:hover{background:var(--dsw-alias-button-primary-hover)}
+.dsh-ts-cfg-primary:disabled{opacity:.5;cursor:default}
+.dsh-ts-cfg-primary:focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}
+.dsh-ts-cfg-ghost{border:0.5px solid var(--dsw-alias-border-l2);border-radius:8px;padding:6px 12px;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;cursor:pointer}
+.dsh-ts-cfg-ghost:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dsh-ts-cfg-ghost:disabled{opacity:.5;cursor:default}
+.dsh-ts-cfg-ghost:focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:2px}
+.dsh-ts-cfg-reset{align-self:flex-start;margin-top:2px;padding:0;border:none;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:11px;text-decoration:underline;cursor:pointer}
+.dsh-ts-cfg-reset:hover{color:var(--dsw-alias-label-primary)}
+.dsh-ts-cfg-reset:disabled{opacity:.5;cursor:default}
+.dsh-ts-cfg-status{margin:0;font-size:11px;line-height:1.5;color:var(--dsw-alias-label-tertiary)}
+.dsh-ts-cfg-status[data-tone="failed"]{color:var(--dsw-alias-state-business-critical,var(--dsw-alias-label-secondary))}
+.dsh-ts-cfg-note{margin:0;font-size:11px;line-height:1.5;color:var(--dsw-alias-label-tertiary)}
 `;
 
     /** The folder-plus glyph (slot-sized, inherits currentColor). */
@@ -565,12 +650,356 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /* ------------------------------------------------------------------ *
+     * Plugin-page configuration card (`plugins.row.config`).
+     *
+     * The official form primitives (SettingsFormModel / SettingsValueField)
+     * live in @deepseek-ai/dsh-client-ui-primitives, which the plugin skill
+     * forbids a bundle to require. So the controller below is a local,
+     * dependency-free re-implementation of the same semantics (field specs,
+     * staged draft, save/discard plan, `remote.settings.mutate` writes) and
+     * the card is hand-written with h() + --dsw-alias-* tokens.
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Editable settings, in form order. Mirrors the Host `Config` schema;
+     * `kind` picks the parse/format rules.
+     * @type {{field: string, kind: 'text'|'number'}[]}
+     */
+    const CONFIG_SPECS = [
+      { field: 'rootDir', kind: 'text' },
+      { field: 'folderTemplate', kind: 'text' },
+      { field: 'defaultPreset', kind: 'text' },
+      { field: 'autoCleanDays', kind: 'number' },
+    ];
+
+    /** @param {string} field @returns {{field: string, kind: string}} */
+    function specOf(field) {
+      return CONFIG_SPECS.find((spec) => spec.field === field) || { field, kind: 'text' };
+    }
+
+    /**
+     * Render a stored value as input text (mirrors settingsTextField /
+     * settingsNumberField format()).
+     * @param {{field: string, kind: string}} spec
+     * @param {unknown} value - the effective (live) value from the snapshot.
+     * @returns {string}
+     */
+    function formatFieldValue(spec, value) {
+      if (spec.kind === 'number') return typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
+      return typeof value === 'string' ? value : '';
+    }
+
+    /**
+     * Parse input text into a form op (mirrors the primitives parse()):
+     * empty means "clear" (back to inherited), invalid input returns
+     * undefined so the field is flagged invalid.
+     * @param {{field: string, kind: string}} spec
+     * @param {string} text
+     * @returns {{kind: 'set', value: unknown} | {kind: 'clear'} | undefined}
+     */
+    function parseFieldValue(spec, text) {
+      const trimmed = String(text ?? '').trim();
+      if (trimmed === '') return { kind: 'clear' };
+      if (spec.kind === 'number') {
+        const parsed = Number(trimmed);
+        if (!Number.isFinite(parsed)) return undefined;
+        return { kind: 'set', value: parsed };
+      }
+      return { kind: 'set', value: trimmed };
+    }
+
+    /**
+     * Local equivalent of the official SettingsFormModel: owns the staged
+     * draft, derives the projection from the Host mirror snapshot and writes
+     * back through `ConfigFormController` (remote.settings.mutate).
+     */
+    class TaskConfigFormController {
+      /** @param {any} scope - `ctx.configForms.get(CONFIG_NS)`. */
+      constructor(scope) {
+        this.scope = scope;
+        /** @type {Map<string, {text: string, write?: {kind:'set',value:unknown}|{kind:'clear'}}>} */
+        this.staged = new Map();
+        this.saving = false;
+        this.failed = false;
+        this.listeners = new Set();
+        // The mirror pushes a fresh snapshot after every accepted write (the
+        // Host emits `settings/document-updated`), so a local subscription is
+        // the only state we need — no plugin-owned persistence.
+        this.unsubscribe = typeof scope?.subscribe === 'function' ? scope.subscribe(() => this.publish()) : undefined;
+      }
+
+      /** @returns {any} the mirror snapshot (status/value/base/user/revision/writable). */
+      snapshot() {
+        return this.scope?.getSnapshot?.() ?? {};
+      }
+
+      /** @param {string} field @returns {boolean} true when the override layer sets it. */
+      stored(field) {
+        const user = this.snapshot().user;
+        return user !== undefined && user !== null && Object.hasOwn(user, field);
+      }
+
+      /** @param {string} field @returns {unknown} the effective (live) value. */
+      valueOfField(field) {
+        return this.snapshot().value?.[field];
+      }
+
+      /** @param {string} field @returns {unknown} the inherited/base value. */
+      baseOfField(field) {
+        return this.snapshot().base?.[field];
+      }
+
+      /** @param {string} field @returns {{text: string, overridden: boolean, invalid: boolean}} */
+      field(field) {
+        const spec = specOf(field);
+        const staged = this.staged.get(field);
+        if (staged) {
+          return {
+            text: staged.text,
+            overridden: staged.write !== undefined && staged.write.kind === 'set',
+            invalid: staged.write === undefined,
+          };
+        }
+        return { text: formatFieldValue(spec, this.valueOfField(field)), overridden: this.stored(field), invalid: false };
+      }
+
+      /** Form-level state (mirrors SettingsFormModel.shell()). */
+      shell() {
+        const snap = this.snapshot();
+        const invalid = [...this.staged.values()].some((entry) => entry.write === undefined);
+        return {
+          available: snap.status === 'ready',
+          writable: snap.writable === true,
+          dirty: this.staged.size > 0,
+          invalid,
+          saving: this.saving,
+          failed: this.failed,
+        };
+      }
+
+      /** @returns {Record<string, any>} full projection for the card. */
+      projection() {
+        const out = this.shell();
+        for (const spec of CONFIG_SPECS) out[spec.field] = this.field(spec.field);
+        return out;
+      }
+
+      /** Stage an edit (draft only — nothing is written until save()). */
+      edit(field, text) {
+        const spec = specOf(field);
+        this.staged.set(field, { text, write: parseFieldValue(spec, text) });
+        this.publish();
+      }
+
+      /** Stage a "back to inherited" for one field. */
+      resetField(field) {
+        const spec = specOf(field);
+        this.staged.set(field, { text: formatFieldValue(spec, this.baseOfField(field)), write: { kind: 'clear' } });
+        this.publish();
+      }
+
+      /**
+       * Translate the staged draft into settings ops. An unchanged field is
+       * skipped, an invalid one blocks the whole save.
+       * @returns {{ops: {op: string, path: string[], value?: unknown}[], invalid: boolean}}
+       */
+      plan() {
+        /** @type {{op: string, path: string[], value?: unknown}[]} */
+        const ops = [];
+        let invalid = false;
+        for (const [field, entry] of this.staged) {
+          if (entry.write === undefined) {
+            invalid = true;
+            continue;
+          }
+          if (entry.write.kind === 'clear') {
+            if (this.stored(field)) ops.push({ op: 'unset', path: [field] });
+            continue;
+          }
+          const spec = specOf(field);
+          const current = formatFieldValue(spec, this.valueOfField(field));
+          if (entry.text === current) continue;
+          ops.push({ op: 'set', path: [field], value: entry.write.value });
+        }
+        return { ops, invalid };
+      }
+
+      /** Persist the draft; failures keep the draft so nothing is lost. */
+      async save() {
+        const { dirty, writable, invalid, saving } = this.shell();
+        if (!dirty || saving || !writable || invalid) return false;
+        const { ops } = this.plan();
+        this.saving = true;
+        this.failed = false;
+        this.publish();
+        try {
+          // A plan that changes nothing still clears the draft locally.
+          if (!ops.length) {
+            this.staged.clear();
+            this.publish();
+            return true;
+          }
+          const landed = (await this.scope?.mutate?.(ops, this.snapshot().revision)) !== false;
+          this.failed = !landed;
+          if (landed) this.staged.clear();
+          return landed;
+        } catch {
+          this.failed = true;
+          return false;
+        } finally {
+          this.saving = false;
+          this.publish();
+        }
+      }
+
+      /** Drop the draft without writing. */
+      discard() {
+        this.staged.clear();
+        this.failed = false;
+        this.publish();
+      }
+
+      /** @param {() => void} listener @returns {() => void} unsubscribe. */
+      subscribe(listener) {
+        this.listeners.add(listener);
+        return () => this.listeners.delete(listener);
+      }
+
+      publish() {
+        const snapshot = this.projection();
+        for (const listener of this.listeners) listener(snapshot);
+      }
+
+      dispose() {
+        this.unsubscribe?.();
+        this.listeners.clear();
+      }
+    }
+
+    /** React hook: the controller's projection, re-rendering on every change. */
+    function useConfigProjection(controller) {
+      const [projection, setProjection] = useState(() => controller.projection());
+      useEffect(() => controller.subscribe(() => setProjection(controller.projection())), [controller]);
+      return projection;
+    }
+
+    /** One labelled input row of the plugin-page form. */
+    function ConfigField(props) {
+      const { spec, state, disabled } = props;
+      const onChange = (event) => props.onEdit(spec.field, event.target.value);
+      const onKeyDown = (event) => {
+        // Enter saves (the plugin page is a form, not a chat input).
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          props.onSave();
+        }
+      };
+      return h(
+        'div',
+        { className: 'dsh-ts-cfg-field' },
+        h(
+          'span',
+          { className: 'dsh-ts-cfg-label' },
+          props.label,
+          state.overridden ? h('span', { className: 'dsh-ts-cfg-badge' }, props.overriddenLabel) : null,
+        ),
+        h('input', {
+          className: 'dsh-ts-cfg-input',
+          type: 'text',
+          inputMode: spec.kind === 'number' ? 'numeric' : 'text',
+          value: state.text,
+          disabled,
+          spellCheck: false,
+          'aria-label': props.label,
+          'aria-invalid': state.invalid ? 'true' : 'false',
+          onChange,
+          onKeyDown,
+        }),
+        state.invalid ? h('p', { className: 'dsh-ts-cfg-invalid' }, props.invalidLabel) : null,
+        props.hint ? h('p', { className: 'dsh-ts-cfg-hint' }, props.hint) : null,
+        state.overridden
+          ? h(
+              'button',
+              { type: 'button', className: 'dsh-ts-cfg-reset', disabled, onClick: () => props.onResetField(spec.field) },
+              props.resetLabel,
+            )
+          : null,
+      );
+    }
+
+    /**
+     * Configuration card rendered on the `plugins.row.config` slot.
+     * `view: 'summary'` is the one-line description shown on the row;
+     * `view: 'page'` is the four-field form opened by the 「配置」 control.
+     * @param {{view?: 'summary'|'page', form?: any}} props - slot props.
+     */
+    function TaskConfigCard(props) {
+      const view = props?.view === 'page' ? 'page' : 'summary';
+      // The card lives in the page tree, not in the plugin's apply context,
+      // so the form controller is created lazily per mounted page view.
+      const [controller] = useState(() => new TaskConfigFormController(activeCtx?.configForms?.get?.(CONFIG_NS)));
+      const state = useConfigProjection(controller);
+      useEffect(() => () => controller.dispose(), [controller]);
+      if (view === 'summary') return h('p', { className: 'dsh-ts-cfg-summary' }, translate('config.summary'));
+      const disabled = !state.writable;
+      const onSave = () => {
+        void controller.save();
+      };
+      return h(
+        'div',
+        { className: 'dsh-ts-cfg' },
+        h('style', null, CSS),
+        ...CONFIG_SPECS.map((spec) =>
+          h(ConfigField, {
+            key: spec.field,
+            spec,
+            state: state[spec.field],
+            disabled,
+            label: translate(`config.${spec.field}`),
+            hint: translate(`config.${spec.field}Hint`),
+            overriddenLabel: translate('config.overridden'),
+            resetLabel: translate('config.reset'),
+            invalidLabel: translate('config.invalidNumber'),
+            onEdit: (field, text) => controller.edit(field, text),
+            onResetField: (field) => controller.resetField(field),
+            onSave,
+          }),
+        ),
+        h(
+          'div',
+          { className: 'dsh-ts-cfg-actions' },
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'dsh-ts-cfg-primary',
+              disabled: disabled || !state.dirty || state.invalid || state.saving,
+              onClick: onSave,
+            },
+            state.saving ? translate('config.saving') : translate('config.save'),
+          ),
+          h('button', { type: 'button', className: 'dsh-ts-cfg-ghost', disabled: !state.dirty || state.saving, onClick: () => controller.discard() }, translate('config.discard')),
+        ),
+        state.available
+          ? null
+          : h('p', { className: 'dsh-ts-cfg-status', 'data-tone': 'warning' }, translate('config.unavailable')),
+        disabled && state.available ? h('p', { className: 'dsh-ts-cfg-status' }, translate('config.readOnly')) : null,
+        state.failed ? h('p', { className: 'dsh-ts-cfg-status', 'data-tone': 'failed' }, translate('config.saveFailed')) : null,
+        h('p', { className: 'dsh-ts-cfg-note' }, translate('config.fileOverrideHint')),
+      );
+    }
+
     /** Services required at activation (kept minimal on purpose). */
     // Client services required at activation. `remote` / `remote.session` are
     // mandatory: the client enforces the same `without inject` gating as the
     // Host, so `ctx.remote.session.openWorkspacePath` throws "cannot get
     // property ..." unless the exact service path is declared here first.
-    const inject = ['slots', 'locale', 'remote', 'remote.session'];
+    // `configForms` is the settings-form service (provided by
+    // @deepseek-ai/dsh-client-ui-settings, mirrored in package.json's
+    // `dsh.client.inject`) and backs the plugin-page configuration card; the
+    // official plugin-manager entry declares it too.
+    const inject = ['slots', 'locale', 'remote', 'remote.session', 'configForms'];
 
     /**
      * Register locale dictionaries, the sidebar panellist button and the error
@@ -632,6 +1061,29 @@ window.__ModuleLoader__.load({
           ),
         'dsh-task-space: error dialog',
       );
+
+      // Plugin-page configuration card. The row only gains its 「配置」 control
+      // when this exact key is registered (`plugins.row.config` is keyed by
+      // `<package name>#<row id>`), and the Host only serves the namespace
+      // when the Config schema has volatile fields — `whileServed` gates the
+      // registration on that, so a host without this plugin stays untouched.
+      ctx.effect(() => {
+        let configForms;
+        try {
+          configForms = ctx.configForms;
+          if (typeof configForms?.get !== 'function') return undefined;
+        } catch {
+          // `configForms` not injected (older host / service disabled) — the
+          // sidebar button and the API routes keep working without it.
+          return undefined;
+        }
+        return configForms.whileServed([CONFIG_NS], () =>
+          ctx.slots.inject(
+            'plugins.row.config',
+            () => ctx.slots.register({ name: 'plugins.row.config', key: CONFIG_SLOT_KEY }, TaskConfigCard),
+          ),
+        );
+      }, 'dsh-task-space: plugin page row config');
 
       // Disposal: drop module state references and clear subscribers.
       ctx.effect(
