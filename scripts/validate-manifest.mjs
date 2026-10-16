@@ -141,8 +141,11 @@ for (const key of ['rootDir', 'folderTemplate', 'defaultPreset', 'autoCleanDays'
   check(`config.${key} present`, new RegExp(`\\b${key}:`).test(patchText));
 }
 const settingsText = existsSync(path.join(ROOT, 'settings.yaml')) ? readFileSync(path.join(ROOT, 'settings.yaml'), 'utf8') : '';
+// The shipped settings.yaml documents every key as a comment (the plugin-page
+// form is then the top layer), so the check accepts an active key OR a
+// documented commented-out one: `# rootDir: '...'` / `# rootDir: ...`.
 for (const key of ['rootDir', 'folderTemplate', 'defaultPreset', 'autoCleanDays']) {
-  check(`settings.yaml ${key}`, new RegExp(`^${key}:`, 'm').test(settingsText));
+  check(`settings.yaml ${key}`, new RegExp(`^#?\\s*${key}:`, 'm').test(settingsText));
 }
 
 console.log('[6/6] ES module syntax (node --check on .mjs copies)');

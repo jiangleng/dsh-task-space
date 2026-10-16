@@ -723,9 +723,10 @@ window.__ModuleLoader__.load({
         this.saving = false;
         this.failed = false;
         this.listeners = new Set();
-        // The mirror pushes a fresh snapshot after every accepted write (the
-        // Host emits `settings/document-updated`), so a local subscription is
-        // the only state we need — no plugin-owned persistence.
+        // The shared describe mirror pushes a fresh snapshot whenever the Host
+        // re-reads (write answers fold in, `settings/document-updated`,
+        // reconnects), so a local subscription is the only state we need — no
+        // plugin-owned persistence. `save()` additionally forces a re-read.
         this.unsubscribe = typeof scope?.subscribe === 'function' ? scope.subscribe(() => this.publish()) : undefined;
       }
 
@@ -850,7 +851,26 @@ window.__ModuleLoader__.load({
         } finally {
           this.saving = false;
           this.publish();
+          // Re-read the describe view so the form reflects what the Host now
+          // reports (its own mirror fold can be skipped for superseded writes).
+          void this.refresh();
         }
+      }
+
+      /**
+       * Force a Host re-read of the describe view this form derives from.
+       * `mutate()` folds its own answer into the shared mirror, but that fold is
+       * skipped when a later write superseded this one (the controller then
+       * parks the answer in `pendingRevision`), and the profile patch can also
+       * be edited outside the page — so after a save we re-read. The mirror is
+       * reachable through `configForms.describe()`; its `load()` is idempotent
+       * and a no-op for non-persisted (non-loopback) deployments.
+       * @returns {Promise<void>} settlement after the refresh is applied.
+       */
+      async refresh() {
+        const mirror = activeCtx?.configForms?.describe?.();
+        const load = this.scope?.reload ?? mirror?.load;
+        await load?.call(mirror);
       }
 
       /** Drop the draft without writing. */

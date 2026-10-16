@@ -70,7 +70,7 @@ dsh --dump-config | Select-String task-space   # 应出现 id: task-space / name
 
 ```powershell
 node D:\dsh_project\dsh-task-space\scripts\validate-manifest.mjs   # 64 项静态校验（manifest + 权限 + 语法）
-node D:\dsh_project\dsh-task-space\scripts\smoke-test.mjs          # 116 项断言（真实 Handler + 模拟 Cordis 服务，无需运行中的 DSH）
+node D:\dsh_project\dsh-task-space\scripts\smoke-test.mjs          # 117 项断言（真实 Handler + 模拟 Cordis 服务，无需运行中的 DSH）
 ```
 
 ## 2. 使用
@@ -84,16 +84,18 @@ node D:\dsh_project\dsh-task-space\scripts\smoke-test.mjs          # 116 项断�
 
 ## 3. 配置
 
-配置有两条通道，二选一即可（同键同时存在时，**表越大者赢**）：
+配置有两条通道，二选一即可（同键同时存在时，**层级高者赢**）：
 
 | 通道 | 写入位置 | 层 | 生效时机 |
 | --- | --- | --- | --- |
 | **A. WebUI 插件页表单（推荐）** | 插件 → 任务空间 → 组件行「配置」 | patch config（第 2 层） | 保存后**下一次点击即生效**，免重启 |
-| B. 插件包 `settings.yaml` | 包根 `settings.yaml` | 文件层（**第 1 层，最高**） | 每次请求重读，免重启 |
+| B. 插件包 `settings.yaml` | 包根 `settings.yaml` | 文件层（第 3 层，最高） | 每次请求重读，免重启 |
 
 > 表单为什么不是最高层：DSH 官方配置链只有三层——内置 schema 默认值 → profile `cordis.patch.yml` 的 `config:` →（由插件自管的）包内 `settings.yaml`。插件页表单经 `dsh-config-editor` 写的就是 patch config 层（官方对全部插件一视同仁，不会为单个插件发明第四层）；`settings.yaml` 是插件自建的运维层，刻意放在最高，用于**版本化分发 + 团队统一下发**。
 >
-> 所以：**表单保存一定生效，除非 `settings.yaml` 写了同键**——那种情况下是文件层按设计覆盖了 GUI（属预期，不是 bug）。想完全用页面控制，把 `settings.yaml` 里对应键删掉即可（删掉后表单值就是最高层）。
+> **本插件出厂的 `settings.yaml` 四键全部为注释态**，也就是表单值就是当前的最高层：填什么、保存、下一次点击【新建临时对话】立即按新值执行。只有当你手动去掉某行的 `# ` 并填了值，该键才回到文件层管辖（此时表单保存后「生效值」不变属预期——文件层按设计覆盖 GUI，不是 bug）。
+>
+> 表单保存后会自动向 Host 重读一次 describe 视图，因此输入框显示的值始终与 Host 报告的生效值一致；若发现显示与 `~\.dsh\profiles\<profile>\cordis.patch.yml` 里的 `config:` 不一致，那是上面的层级规则在起作用，而不是保存失败。
 
 ### 3.1 在 WebUI 插件页配置（推荐）
 
@@ -165,7 +167,7 @@ dsh-task-space/
 ├── locale/{en.json,zh.json}    # 显示元数据（meta.title / meta.description）
 ├── scripts/
 │   ├── validate-manifest.mjs   # manifest + 权限声明 + 语法 校验（64 项）
-│   └── smoke-test.mjs          # 功能测试（116 项断言）
+│   └── smoke-test.mjs          # 功能测试（117 项断言）
 └── README.md
 ```
 
@@ -200,7 +202,7 @@ Set-Location D:\dsh_project\dsh-task-space
 # ① 静态校验（manifest 合法性 + 权限声明 + 全部 JS 语法，64 项）
 node scripts\validate-manifest.mjs
 
-# ② 功能测试（真实插件 Handler + 模拟 Cordis 服务，116 项断言；不需要运行中的 DSH）
+# ② 功能测试（真实插件 Handler + 模拟 Cordis 服务，117 项断言；不需要运行中的 DSH）
 node scripts\smoke-test.mjs
 #    覆盖：三层配置合并 / 模板渲染与目录名清洗 / 权限校验与回滚 /
 #    信任栅栏（403/405）/ settings.yaml 免重启生效 / 清理语义与日志 /
@@ -253,7 +255,8 @@ await fetch('/api/task-space/cleanup', { method: 'POST', headers: { 'x-dsh-plugi
 | 弹「没有权限写入任务目录」 | `rootDir` 不可写：改 `settings.yaml` 或插件页表单为可写路径（默认 `D:\dsh_working`） |
 | 弹「无法创建任务根目录」 | 磁盘/路径非法；日志含具体 errno |
 | 清理没有执行 | `autoCleanDays: 0`（默认关闭）或目录缺插件标记 |
-| 保存了插件页表单但行为没变 | `settings.yaml` 写了同键（文件层按设计覆盖 GUI 层）：删掉该键，或改用文件配置 |
+| 保存了插件页表单但行为没变 | `settings.yaml` 写了同键（文件层按设计覆盖 GUI 层）：删掉该键，或改用文件配置。出厂版四键均为注释态，不会出现此情况 |
+| 保存成功但表单显示的值和 patch 文件不一致 | 层级规则：`settings.yaml` 同键更高；表单显示的是 Host 报告的**生效值**，不是 patch 原文 |
 | 插件详情页没有「配置」按钮 | Host Config 字段未标 `.volatile()`（`dsh-settings describe()` 不导出该 entry 的 namespace，插件页无从渲染表单）；本版本四字段均已 volatile |
 | 插件页表单只读/不可保存 | 非回环部署（remote 访问）持久化为 memory；或 profile 中该 entry 未激活 |
 | 会话创建成功但没自动打开 | 浏览器导航服务延迟超时（约 6s）；从侧边栏进入该会话即可，会话本身已创建 |

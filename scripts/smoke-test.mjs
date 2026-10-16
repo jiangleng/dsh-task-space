@@ -591,6 +591,9 @@ async function main() {
     check(/this\.scope\?\.mutate\?\.\(/.test(clientSource) && /op:\s*'unset'/.test(clientSource) && /op:\s*'set'/.test(clientSource),
       'writes go through the ConfigFormController mutate() (remote.settings.mutate) with '
       + 'set/unset ops — no plugin-owned persistence');
+    check(/void this\.refresh\(\)/.test(clientSource) && /configForms\?\.describe\?\.\(\)/.test(clientSource),
+      'a successful save re-reads the shared describe mirror (configForms.describe().load) so the '
+      + 'form shows the Host-reported value even when mutate() folded no answer in');
     check(/view === 'page' \? 'page' : 'summary'/.test(clientSource),
       "the card honors the slot's view contract ('summary' = one-liner, 'page' = the form)");
     check(clientSource.includes("view === 'summary'") && /'dsh-ts-cfg-actions'/.test(clientSource),
@@ -615,9 +618,9 @@ async function main() {
     const settingsText = existsSync(SETTINGS_BACKUP)
       ? await fs.readFile(SETTINGS_BACKUP, 'utf8')
       : await fs.readFile(SETTINGS_FILE, 'utf8');
-    check(/patch config/.test(settingsText),
-      'settings.yaml documents that the plugin-page form writes the patch config layer, '
-      + 'which this file still overrides');
+    check(/patch config/.test(settingsText) && /现在插件页表单保存的值就是最高层/.test(settingsText),
+      'settings.yaml documents the layer order AND states that the shipped file leaves every '
+      + 'key commented, so the plugin-page form is currently the top layer');
   } finally {
     await unstashSettings();
     await fs.rm(TMP, { recursive: true, force: true }).catch(() => {});
